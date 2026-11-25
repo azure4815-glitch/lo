@@ -1,1 +1,582 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eldorado Defense - Web Edition</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+    body {
+      background: radial-gradient(circle at top, #1b2436, #0d1117);
+      color: #f0f6fc;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 960px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 12px 18px;
+      margin-bottom: 12px;
+    }
+    .title { font-size: 1.2rem; font-weight: 700; color: #f5c542; }
+    .stats { display: flex; gap: 16px; font-weight: 600; font-size: 0.95rem; }
+    .stat span { color: #58a6ff; }
+    .stat.gold span { color: #f5c542; }
+    .stat.hp span { color: #ff7b72; }
+    .controls { display: flex; gap: 8px; }
+    button {
+      background: #238636;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.15s;
+    }
+    button:hover { filter: brightness(1.12); }
+    button.secondary { background: #30363d; }
+    button.hero-btn { background: #8957e5; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .game-wrap {
+      display: flex;
+      gap: 14px;
+      width: 100%;
+      max-width: 960px;
+      flex-wrap: wrap;
+    }
+    canvas {
+      background: #131c18;
+      border: 2px solid #30363d;
+      border-radius: 12px;
+      cursor: pointer;
+      flex: 1 1 640px;
+      max-width: 100%;
+    }
+    .sidebar {
+      flex: 1 1 260px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .sidebar h3 { font-size: 1rem; color: #f5c542; border-bottom: 1px solid #30363d; padding-bottom: 6px; }
+    .tower-card {
+      background: #21262d;
+      border: 2px solid transparent;
+      border-radius: 8px;
+      padding: 10px;
+      cursor: pointer;
+      transition: 0.15s;
+    }
+    .tower-card.active { border-color: #f5c542; background: #282e36; }
+    .tower-card .top { display: flex; justify-content: space-between; font-weight: 700; }
+    .tower-card .desc { font-size: 0.82rem; color: #8b949e; margin-top: 4px; }
+    .info-box {
+      margin-top: auto;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 0.85rem;
+      line-height: 1.45;
+    }
+    #msg { color: #f5c542; font-weight: 600; min-height: 20px; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">⚔️ ELDORADO DEFENSE</div>
+    <div class="stats">
+      <div class="stat gold">💰 Vàng: <span id="gold">250</span></div>
+      <div class="stat hp">❤️ Thành: <span id="lives">20</span></div>
+      <div class="stat">🌊 Đợt (Wave): <span id="wave">1</span></div>
+      <div class="stat">🏆 Điểm: <span id="score">0</span></div>
+    </div>
+    <div class="controls">
+      <button id="btnWave">Gọi Đợt Quái</button>
+      <button id="btnSpeed" class="secondary">Tốc độ: 1x</button>
+      <button id="btnHero" class="hero-btn">⚡ Kỹ năng Robin (CD: 0s)</button>
+    </div>
+  </header>
 
+  <div class="game-wrap">
+    <canvas id="gameCanvas" width="680" height="460"></canvas>
+
+    <div class="sidebar">
+      <h3>🗼 Xây Tháp Phòng Thủ</h3>
+      <div id="towerList"></div>
+
+      <div id="selectedPanel" style="display:none;">
+        <h3>🔧 Tháp Đã Chọn</h3>
+        <div id="selectedInfo" style="font-size:0.85rem; margin:6px 0;"></div>
+        <div style="display:flex; gap:8px;">
+          <button id="btnUpgrade" style="flex:1;">Nâng cấp</button>
+          <button id="btnSell" class="secondary">Bán</button>
+        </div>
+      </div>
+
+      <div id="msg">Chọn tháp bên trên rồi bấm vào ô đất trống!</div>
+      <div class="info-box">
+        <b>Hướng dẫn:</b><br>
+        • Đặt tháp tại các ô màu tối quanh đường đi.<br>
+        • Bấm vào tháp đã đặt để <b>Nâng cấp bậc</b> (Thường → Cao Cấp → Hiếm → Anh Hùng → Huyền Thoại).<br>
+        • Dùng kỹ năng anh hùng <b>Robin</b> để bắn mưa tên toàn bản đồ.
+      </div>
+    </div>
+  </div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const COLS = 17, ROWS = 11, TILE = 40;
+const GRADES = ['Thường', 'Cao Cấp', 'Hiếm', 'Anh Hùng', 'Huyền Thoại', 'Thần Thoại'];
+
+const TOWER_TYPES = [
+  { id: 'dagger', name: 'Shuriken', cost: 50, range: 115, damage: 16, rate: 0.45, color: '#58a6ff', desc: 'Tốc độ đánh rất nhanh, sát thương đơn mục tiêu.' },
+  { id: 'arrow', name: 'Ice Arrow', cost: 75, range: 135, damage: 22, rate: 0.75, slow: 0.5, color: '#79c0ff', desc: 'Bắn tên băng làm chậm 50% tốc độ kẻ địch.' },
+  { id: 'magic', name: 'Magic', cost: 100, range: 140, damage: 42, rate: 1.1, color: '#d2a8ff', desc: 'Sát thương phép mạnh, xuyên giáp quái vật.' },
+  { id: 'potan', name: 'Cannon', cost: 125, range: 125, damage: 55, rate: 1.5, splash: 55, color: '#ffa657', desc: 'Bắn pháo nổ gây sát thương phạm vi rộng.' },
+  { id: 'lightning', name: 'Lightning', cost: 150, range: 150, damage: 48, rate: 1.0, chain: 3, color: '#f5c542', desc: 'Giật sét lan tối đa 3 mục tiêu liên tiếp.' }
+];
+
+// Đường đi của quái (tọa độ ô lưới)
+const PATH_NODES = [
+  {c: 0, r: 2}, {c: 4, r: 2}, {c: 4, r: 8}, {c: 9, r: 8},
+  {c: 9, r: 2}, {c: 13, r: 2}, {c: 13, r: 6}, {c: 16, r: 6}
+];
+
+const pathTiles = new Set();
+for (let i = 0; i < PATH_NODES.length - 1; i++) {
+  const a = PATH_NODES[i], b = PATH_NODES[i + 1];
+  for (let c = Math.min(a.c, b.c); c <= Math.max(a.c, b.c); c++) {
+    for (let r = Math.min(a.r, b.r); r <= Math.max(a.r, b.r); r++) {
+      pathTiles.add(`${c},${r}`);
+    }
+  }
+}
+
+let state = {
+  gold: 250,
+  lives: 20,
+  wave: 1,
+  score: 0,
+  speed: 1,
+  selectedBuild: TOWER_TYPES[0],
+  selectedTower: null,
+  towers: [],
+  enemies: [],
+  projectiles: [],
+  effects: [],
+  spawning: false,
+  spawnQueue: [],
+  spawnTimer: 0,
+  heroCooldown: 0,
+  gameOver: false
+};
+
+// Render danh sách tháp
+const towerListEl = document.getElementById('towerList');
+function renderTowerShop() {
+  towerListEl.innerHTML = '';
+  TOWER_TYPES.forEach(t => {
+    const div = document.createElement('div');
+    div.className = 'tower-card' + (state.selectedBuild?.id === t.id ? ' active' : '');
+    div.innerHTML = `
+      <div class="top"><span style="color:${t.color}">● ${t.name}</span><span>${t.cost}💰</span></div>
+      <div class="desc">${t.desc}</div>
+    `;
+    div.onclick = () => {
+      state.selectedBuild = t;
+      state.selectedTower = null;
+      updateUI();
+    };
+    towerListEl.appendChild(div);
+  });
+}
+
+function setMsg(text) {
+  document.getElementById('msg').textContent = text;
+}
+
+function updateUI() {
+  document.getElementById('gold').textContent = Math.floor(state.gold);
+  document.getElementById('lives').textContent = state.lives;
+  document.getElementById('wave').textContent = state.wave;
+  document.getElementById('score').textContent = state.score;
+  document.getElementById('btnSpeed').textContent = `Tốc độ: ${state.speed}x`;
+  document.getElementById('btnWave').disabled = state.spawning || state.gameOver;
+
+  const heroBtn = document.getElementById('btnHero');
+  if (state.heroCooldown > 0) {
+    heroBtn.disabled = true;
+    heroBtn.textContent = `⚡ Kỹ năng Robin (CD: ${Math.ceil(state.heroCooldown)}s)`;
+  } else {
+    heroBtn.disabled = state.gameOver;
+    heroBtn.textContent = `⚡ Kỹ năng Robin (Sẵn sàng)`;
+  }
+
+  renderTowerShop();
+
+  const panel = document.getElementById('selectedPanel');
+  if (state.selectedTower) {
+    const t = state.selectedTower;
+    const upCost = Math.floor(t.baseCost * (t.level * 0.85));
+    panel.style.display = 'block';
+    document.getElementById('selectedInfo').innerHTML = `
+      <b>${t.name}</b> [Bậc: <span style="color:#f5c542">${GRADES[Math.min(t.level - 1, GRADES.length - 1)]}</span>]<br>
+      Sát thương: <b>${Math.round(t.damage)}</b> | Tầm bắn: <b>${Math.round(t.range)}</b>
+    `;
+    const btnUp = document.getElementById('btnUpgrade');
+    btnUp.textContent = t.level >= GRADES.length ? 'Tối đa' : `Nâng cấp (${upCost}💰)`;
+    btnUp.disabled = t.level >= GRADES.length || state.gold < upCost;
+    document.getElementById('btnSell').textContent = `Bán (+${Math.floor(t.totalInvested * 0.7)}💰)`;
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+function startWave() {
+  if (state.spawning || state.gameOver) return;
+  state.spawning = true;
+  const count = 8 + state.wave * 3;
+  const isBossWave = state.wave % 5 === 0;
+  state.spawnQueue = [];
+
+  for (let i = 0; i < count; i++) {
+    const isBoss = isBossWave && i === count - 1;
+    state.spawnQueue.push({
+      hp: (55 + state.wave * 32) * (isBoss ? 6 : 1),
+      maxHp: (55 + state.wave * 32) * (isBoss ? 6 : 1),
+      speed: isBoss ? 42 : 68 + Math.min(state.wave * 2, 45),
+      reward: isBoss ? 120 : 12 + Math.floor(state.wave * 1.5),
+      isBoss,
+      nodeIndex: 0,
+      x: PATH_NODES[0].c * TILE + TILE / 2,
+      y: PATH_NODES[0].r * TILE + TILE / 2,
+      slowTimer: 0
+    });
+  }
+  setMsg(isBossWave ? `⚠️ BOSS ĐỢT ${state.wave} ĐANG TẤN CÔNG!` : `Đợt quái ${state.wave} xuất phát!`);
+  updateUI();
+}
+
+canvas.addEventListener('click', (e) => {
+  if (state.gameOver) return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const mx = (e.clientX - rect.left) * scaleX;
+  const my = (e.clientY - rect.top) * scaleY;
+  const c = Math.floor(mx / TILE);
+  const r = Math.floor(my / TILE);
+
+  const existing = state.towers.find(t => t.c === c && t.r === r);
+  if (existing) {
+    state.selectedTower = existing;
+    updateUI();
+    return;
+  }
+
+  if (pathTiles.has(`${c},${r}`)) {
+    setMsg('❌ Không thể xây tháp trên đường đi của quái!');
+    return;
+  }
+
+  const blueprint = state.selectedBuild;
+  if (!blueprint) return;
+  if (state.gold < blueprint.cost) {
+    setMsg('❌ Không đủ Vàng!');
+    return;
+  }
+
+  state.gold -= blueprint.cost;
+  const tower = {
+    ...blueprint,
+    c, r,
+    x: c * TILE + TILE / 2,
+    y: r * TILE + TILE / 2,
+    level: 1,
+    baseCost: blueprint.cost,
+    totalInvested: blueprint.cost,
+    cooldown: 0
+  };
+  state.towers.push(tower);
+  state.selectedTower = tower;
+  setMsg(`✅ Đã xây ${tower.name}!`);
+  updateUI();
+});
+
+document.getElementById('btnUpgrade').onclick = () => {
+  const t = state.selectedTower;
+  if (!t || t.level >= GRADES.length) return;
+  const upCost = Math.floor(t.baseCost * (t.level * 0.85));
+  if (state.gold < upCost) return;
+  state.gold -= upCost;
+  t.totalInvested += upCost;
+  t.level++;
+  t.damage *= 1.48;
+  t.range += 10;
+  setMsg(`⬆️ ${t.name} đã thăng bậc ${GRADES[t.level - 1]}!`);
+  updateUI();
+};
+
+document.getElementById('btnSell').onclick = () => {
+  const t = state.selectedTower;
+  if (!t) return;
+  state.gold += Math.floor(t.totalInvested * 0.7);
+  state.towers = state.towers.filter(item => item !== t);
+  state.selectedTower = null;
+  setMsg('💰 Đã bán tháp.');
+  updateUI();
+};
+
+document.getElementById('btnWave').onclick = startWave;
+document.getElementById('btnSpeed').onclick = () => {
+  state.speed = state.speed === 1 ? 2 : state.speed === 2 ? 3 : 1;
+  updateUI();
+};
+
+document.getElementById('btnHero').onclick = () => {
+  if (state.heroCooldown > 0 || state.gameOver) return;
+  state.heroCooldown = 18;
+  const dmg = 90 + state.wave * 35;
+  state.enemies.forEach(en => {
+    en.hp -= dmg;
+    en.slowTimer = 2.5;
+    state.effects.push({ x: en.x, y: en.y, r: 24, color: '#8957e5', alpha: 1 });
+  });
+  setMsg(`🏹 Robin thi triển Mưa Tên gây ${dmg} sát thương toàn bản đồ!`);
+  updateUI();
+};
+
+function update(dt) {
+  if (state.gameOver) return;
+  dt *= state.speed;
+
+  if (state.heroCooldown > 0) {
+    state.heroCooldown = Math.max(0, state.heroCooldown - dt);
+  }
+
+  // Spawn quái
+  if (state.spawning) {
+    state.spawnTimer -= dt;
+    if (state.spawnTimer <= 0 && state.spawnQueue.length > 0) {
+      state.enemies.push(state.spawnQueue.shift());
+      state.spawnTimer = 0.75;
+    }
+    if (state.spawnQueue.length === 0 && state.enemies.length === 0) {
+      state.spawning = false;
+      state.gold += 35 + state.wave * 10;
+      state.wave++;
+      setMsg(`🎉 Hoàn thành đợt! Nhận thưởng vàng chuẩn bị cho Đợt ${state.wave}.`);
+      updateUI();
+    }
+  }
+
+  // Di chuyển quái
+  for (let i = state.enemies.length - 1; i >= 0; i--) {
+    const en = state.enemies[i];
+    if (en.hp <= 0) {
+      state.gold += en.reward;
+      state.score += en.reward * 10;
+      state.effects.push({ x: en.x, y: en.y, r: 18, color: '#f5c542', alpha: 1 });
+      state.enemies.splice(i, 1);
+      continue;
+    }
+    if (en.slowTimer > 0) en.slowTimer -= dt;
+    const targetNode = PATH_NODES[en.nodeIndex + 1];
+    if (!targetNode) {
+      state.lives -= en.isBoss ? 5 : 1;
+      state.enemies.splice(i, 1);
+      if (state.lives <= 0) {
+        state.lives = 0;
+        state.gameOver = true;
+        setMsg('💀 Thành trì thất thủ! Tải lại trang (F5) để chơi lại.');
+      }
+      continue;
+    }
+    const tx = targetNode.c * TILE + TILE / 2;
+    const ty = targetNode.r * TILE + TILE / 2;
+    const dx = tx - en.x, dy = ty - en.y;
+    const dist = Math.hypot(dx, dy);
+    const spd = en.speed * (en.slowTimer > 0 ? 0.5 : 1);
+    if (dist < spd * dt) {
+      en.x = tx; en.y = ty;
+      en.nodeIndex++;
+    } else {
+      en.x += (dx / dist) * spd * dt;
+      en.y += (dy / dist) * spd * dt;
+    }
+  }
+
+  // Tháp tấn công
+  state.towers.forEach(t => {
+    t.cooldown -= dt;
+    if (t.cooldown > 0) return;
+    const target = state.enemies.find(en => Math.hypot(en.x - t.x, en.y - t.y) <= t.range);
+    if (target) {
+      t.cooldown = t.rate;
+      state.projectiles.push({
+        x: t.x, y: t.y, target,
+        speed: 360,
+        damage: t.damage,
+        color: t.color,
+        slow: t.slow || 0,
+        splash: t.splash || 0,
+        chain: t.chain || 0
+      });
+    }
+  });
+
+  // Đạn bay
+  for (let i = state.projectiles.length - 1; i >= 0; i--) {
+    const p = state.projectiles[i];
+    if (!state.enemies.includes(p.target)) {
+      state.projectiles.splice(i, 1);
+      continue;
+    }
+    const dx = p.target.x - p.x, dy = p.target.y - p.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < p.speed * dt) {
+      // Trúng đích
+      if (p.splash) {
+        state.enemies.forEach(en => {
+          if (Math.hypot(en.x - p.target.x, en.y - p.target.y) <= p.splash) en.hp -= p.damage;
+        });
+        state.effects.push({ x: p.target.x, y: p.target.y, r: p.splash, color: p.color, alpha: 0.8 });
+      } else {
+        p.target.hp -= p.damage;
+        if (p.slow) p.target.slowTimer = 2.0;
+        if (p.chain) {
+          let count = 0;
+          state.enemies.forEach(en => {
+            if (en !== p.target && count < p.chain && Math.hypot(en.x - p.target.x, en.y - p.target.y) <= 95) {
+              en.hp -= p.damage * 0.65;
+              count++;
+              state.effects.push({ x: en.x, y: en.y, r: 14, color: p.color, alpha: 0.9 });
+            }
+          });
+        }
+      }
+      state.projectiles.splice(i, 1);
+    } else {
+      p.x += (dx / dist) * p.speed * dt;
+      p.y += (dy / dist) * p.speed * dt;
+    }
+  }
+
+  // Hiệu ứng
+  for (let i = state.effects.length - 1; i >= 0; i--) {
+    state.effects[i].alpha -= dt * 2.5;
+    if (state.effects[i].alpha <= 0) state.effects.splice(i, 1);
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Vẽ lưới đất & đường đi
+  for (let c = 0; c < COLS; c++) {
+    for (let r = 0; r < ROWS; r++) {
+      const isPath = pathTiles.has(`${c},${r}`);
+      ctx.fillStyle = isPath ? '#3b332b' : ((c + r) % 2 === 0 ? '#16221c' : '#192720');
+      ctx.fillRect(c * TILE, r * TILE, TILE - 1, TILE - 1);
+    }
+  }
+
+  // Vẽ tầm bắn tháp đang chọn
+  if (state.selectedTower) {
+    const t = state.selectedTower;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, t.range, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(245, 197, 66, 0.12)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(245, 197, 66, 0.5)';
+    ctx.stroke();
+  }
+
+  // Vẽ tháp
+  state.towers.forEach(t => {
+    ctx.fillStyle = '#0d1117';
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, 15, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = t.color;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, 11, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Lv.${t.level}`, t.x, t.y + 4);
+  });
+
+  // Vẽ quái vật
+  state.enemies.forEach(en => {
+    ctx.fillStyle = en.isBoss ? '#ff4d4f' : (en.slowTimer > 0 ? '#79c0ff' : '#e5534b');
+    ctx.beginPath();
+    ctx.arc(en.x, en.y, en.isBoss ? 15 : 10, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Thanh máu
+    const w = en.isBoss ? 32 : 22;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(en.x - w / 2, en.y - 18, w, 4);
+    ctx.fillStyle = '#3fb950';
+    ctx.fillRect(en.x - w / 2, en.y - 18, w * Math.max(0, en.hp / en.maxHp), 4);
+  });
+
+  // Vẽ đạn
+  state.projectiles.forEach(p => {
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Vẽ hiệu ứng nổ/kỹ năng
+  state.effects.forEach(ef => {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, ef.alpha);
+    ctx.strokeStyle = ef.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(ef.x, ef.y, ef.r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  });
+}
+
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  update(dt);
+  draw();
+  if (Math.floor(now / 250) !== Math.floor((now - dt * 1000) / 250)) updateUI();
+  requestAnimationFrame(loop);
+}
+
+updateUI();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
